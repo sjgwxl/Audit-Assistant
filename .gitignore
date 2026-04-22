@@ -1,0 +1,64 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+release/
+out/
+
+# Electron Builder
+*.blockmap
+*.exe
+*.dmg
+*.AppImage
+*.snap
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Editor
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+!electron/init.db
+
+# Cache
+.cache/
+.eslintcache
+.stylelintcache
+
+# Test coverage
+coverage/
+
+# Temp
+*.tmp
+*.bak
