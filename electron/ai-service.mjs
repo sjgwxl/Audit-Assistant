@@ -364,6 +364,11 @@ class AIService {
 7. 明确标注需要进一步核实的事项和证据缺口
 8. 建议后续审计沟通的重点方向和需要追问的问题
 
+特别注意：
+- 如果是"会议访谈"（多人参与），需要分析各参会人员的角色和立场，识别不同人员之间的观点差异和利益关系
+- 如果是"单人访谈"，重点分析该被访谈人的表述一致性和信息完整性
+- 会议访谈中可能存在集体表态的情况，需要识别是否有未充分表达的意见
+
 请使用以下结构化格式输出：
 ## 一、关键发现
 （列出从访谈中提取的关键信息）
@@ -496,8 +501,11 @@ ${interviewContent}
   /**
    * 轻量级：生成访谈摘要（简短prompt，快速响应）
    */
-  async generateSummary(content) {
-    const systemPrompt = `你是一位专业的审计分析师。请根据访谈内容生成简洁的摘要，不超过300字。只输出摘要文本，不要输出其他内容。`
+  async generateSummary(content, interviewType = 'individual') {
+    const typeHint = interviewType === 'meeting'
+      ? '这是一次会议访谈记录，请概括会议的主要议题、各方观点和核心结论。'
+      : '请概括被访谈人的核心表述和关键信息。'
+    const systemPrompt = `你是一位专业的审计分析师。请根据访谈内容生成简洁的摘要，不超过300字。${typeHint}只输出摘要文本，不要输出其他内容。`
 
     return this.chat({
       prompt: content,
@@ -511,7 +519,10 @@ ${interviewContent}
   /**
    * 轻量级：从访谈内容中提取关键发现（含语言矛盾点分析）
    */
-  async extractKeyFindings(content, projectName = '') {
+  async extractKeyFindings(content, projectName = '', interviewType = 'individual') {
+    const meetingHint = interviewType === 'meeting'
+      ? '\n注意：这是一次会议访谈，请特别关注不同参会人员之间的观点差异、立场分歧和利益关系。'
+      : ''
     const systemPrompt = `你是一位专业的审计分析师。请从访谈内容中提取关键发现。
 
 要求：
@@ -519,7 +530,7 @@ ${interviewContent}
 2. 重点关注被访谈人对数字、金额、流程、时间节点的描述
 3. 识别语言中的矛盾点、含糊表述和前后不一致之处（如"大概""可能""不太清楚"等）
 4. 标注需要进一步核实的事项
-5. 按重要性排序，每条发现用编号列出
+5. 按重要性排序，每条发现用编号列出${meetingHint}
 
 输出格式（直接输出，不要加标题）：
 1. 【关键发现】具体内容...
@@ -542,14 +553,17 @@ ${interviewContent}
   /**
    * 轻量级：从访谈内容中提取风险指标
    */
-  async extractRiskIndicators(content, projectName = '') {
+  async extractRiskIndicators(content, projectName = '', interviewType = 'individual') {
+    const meetingHint = interviewType === 'meeting'
+      ? '\n注意：这是一次会议访谈，请关注多人讨论中暴露的系统性风险和组织层面风险。'
+      : ''
     const systemPrompt = `你是一位专业的审计风险评估专家。请从访谈内容中提取风险指标。
 
 要求：
 1. 识别访谈中提到的所有潜在风险
 2. 对每个风险标注等级（低/中/高/严重）
 3. 说明风险来源和可能的影响
-4. 按风险等级从高到低排序
+4. 按风险等级从高到低排序${meetingHint}
 
 输出格式（直接输出，不要加标题）：
 - 【严重】风险描述 —— 来源：... —— 影响：...

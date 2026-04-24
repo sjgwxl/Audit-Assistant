@@ -123,7 +123,8 @@ function createTables() {
     `CREATE TABLE IF NOT EXISTS interviews (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
-      interviewee_id TEXT NOT NULL,
+      interviewee_ids TEXT NOT NULL DEFAULT '',
+      interview_type TEXT NOT NULL DEFAULT 'individual' CHECK(interview_type IN ('individual', 'meeting')),
       title TEXT NOT NULL,
       date TEXT NOT NULL,
       time_start TEXT,
@@ -141,8 +142,7 @@ function createTables() {
       created_by TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-      FOREIGN KEY (interviewee_id) REFERENCES interviewees(id)
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     )`,
 
     // 风险点表
@@ -258,7 +258,6 @@ function createTables() {
     'CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status)',
     'CREATE INDEX IF NOT EXISTS idx_projects_leader ON projects(leader_id)',
     'CREATE INDEX IF NOT EXISTS idx_interviews_project ON interviews(project_id)',
-    'CREATE INDEX IF NOT EXISTS idx_interviews_interviewee ON interviews(interviewee_id)',
     'CREATE INDEX IF NOT EXISTS idx_interviews_date ON interviews(date)',
     'CREATE INDEX IF NOT EXISTS idx_risk_points_project ON risk_points(project_id)',
     'CREATE INDEX IF NOT EXISTS idx_risk_points_level ON risk_points(risk_level)',
@@ -633,12 +632,10 @@ export const intervieweeDB = {
     const params = []
 
     if (filters.project_id) {
-      // 通过访谈关联查询，同时包含该项目下所有有访谈记录的人员
-      // 注意：新创建但还没有访谈记录的人员不会出现在此查询中
-      // 前端应使用不带 project_id 的查询来获取所有人员
+      // 通过访谈关联查询：interviewee_ids 是逗号分隔的ID列表
       sql = `
         SELECT DISTINCT i.* FROM interviewees i
-        INNER JOIN interviews iv ON i.id = iv.interviewee_id
+        INNER JOIN interviews iv ON iv.interviewee_ids LIKE '%' || i.id || '%'
         WHERE iv.project_id = ?
       `
       params.push(filters.project_id)
@@ -690,12 +687,13 @@ export const interviewDB = {
     const id = generateId()
     db.prepare(`
       INSERT INTO interviews (
-        id, project_id, interviewee_id, title, date, time_start, time_end,
+        id, project_id, interviewee_ids, interview_type, title, date, time_start, time_end,
         location, interviewer, content, summary, key_findings, risk_indicators,
         action_items, status, audio_file_path, remark, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      id, data.project_id, data.interviewee_id, data.title, data.date,
+      id, data.project_id, data.interviewee_ids || '', data.interview_type || 'individual',
+      data.title, data.date,
       data.time_start || null, data.time_end || null, data.location || '',
       data.interviewer || '', data.content || '', data.summary || '',
       data.key_findings || '', data.risk_indicators || '', data.action_items || '',
@@ -708,61 +706,83 @@ export const interviewDB = {
   },
 
   getById(id) {
-    return db.prepare(`
-      SELECT iv.*,
-        ie.name as interviewee_name,
-        ie.department as interviewee_department,
-        ie.position as interviewee_position
-      FROM interviews iv
-      LEFT JOIN interviewees ie ON iv.interviewee_id = ie.id
-      WHERE iv.id = ?
-    `).get(id)
+    const interview = db.prepare('SELECT * FROM interviews WHERE id = ?').get(id)
+    if (!interview) return null
+    // 根据 interviewee_ids 查询被访谈人信息
+    const ids = (interview.interviewee_ids || '').split(',').filter(Boolean)
+    let intervieweeNames = ''
+    if (ids.length > 0) {
+      const placeholders = ids.map(() => '?').join(',')
+      const persons = db.prepare(`SELECT id, name, department, position FROM interviewees WHERE id IN (${placeholders})`).all(...ids)
+      intervieweeNames = persons.map(p => p.name).join('、')
+    }
+    return {
+      ...interview,
+      interviewee_name: intervieweeNames,
+      interviewee_list: ids
+    }
   },
 
   list(filters = {}) {
-    let sql = `
-      SELECT iv.*,
-        ie.name as interviewee_name,
-        ie.department as interviewee_department
-      FROM interviews iv
-      LEFT JOIN interviewees ie ON iv.interviewee_id = ie.id
-      WHERE 1=1
-    `
+    let sql = 'SELECT * FROM interviews WHERE 1=1'
     const params = []
 
     if (filters.project_id) {
-      sql += ' AND iv.project_id = ?'
+      sql += ' AND project_id = ?'
       params.push(filters.project_id)
     }
     if (filters.interviewee_id) {
-      sql += ' AND iv.interviewee_id = ?'
-      params.push(filters.interviewee_id)
+      // 模糊匹配 interviewee_ids 字段（逗号分隔）
+      sql += ' AND (interviewee_ids = ? OR interviewee_ids LIKE ? OR interviewee_ids LIKE ?)'
+      params.push(filters.interviewee_id, filters.interviewee_id + ',%', '%,' + filters.interviewee_id)
     }
     if (filters.status) {
-      sql += ' AND iv.status = ?'
+      sql += ' AND status = ?'
       params.push(filters.status)
     }
     if (filters.keyword) {
-      sql += ' AND (iv.title LIKE ? OR iv.summary LIKE ? OR ie.name LIKE ?)'
+      sql += ' AND (title LIKE ? OR summary LIKE ? OR content LIKE ?)'
       const kw = `%${filters.keyword}%`
       params.push(kw, kw, kw)
     }
     if (filters.date_from) {
-      sql += ' AND iv.date >= ?'
+      sql += ' AND date >= ?'
       params.push(filters.date_from)
     }
     if (filters.date_to) {
-      sql += ' AND iv.date <= ?'
+      sql += ' AND date <= ?'
       params.push(filters.date_to)
     }
 
-    sql += ' ORDER BY iv.date DESC, iv.updated_at DESC'
-    return db.prepare(sql).all(...params)
+    sql += ' ORDER BY date DESC, updated_at DESC'
+    const interviews = db.prepare(sql).all(...params)
+
+    // 批量查询被访谈人名称
+    const allIds = new Set()
+    interviews.forEach(iv => {
+      (iv.interviewee_ids || '').split(',').filter(Boolean).forEach(id => allIds.add(id))
+    })
+    const nameMap = {}
+    if (allIds.size > 0) {
+      const placeholders = [...allIds].map(() => '?').join(',')
+      const persons = db.prepare(`SELECT id, name, department, position FROM interviewees WHERE id IN (${placeholders})`).all(...allIds)
+      persons.forEach(p => { nameMap[p.id] = p })
+    }
+
+    return interviews.map(iv => {
+      const ids = (iv.interviewee_ids || '').split(',').filter(Boolean)
+      const names = ids.map(id => nameMap[id]?.name || '').filter(Boolean)
+      return {
+        ...iv,
+        interviewee_name: names.join('、'),
+        interviewee_list: ids
+      }
+    })
   },
 
   update(id, updates) {
     const allowedFields = [
-      'project_id', 'interviewee_id', 'title', 'date', 'time_start', 'time_end',
+      'project_id', 'interviewee_ids', 'interview_type', 'title', 'date', 'time_start', 'time_end',
       'location', 'interviewer', 'content', 'summary', 'key_findings',
       'risk_indicators', 'action_items', 'status', 'audio_file_path', 'remark'
     ]

@@ -550,27 +550,25 @@ function registerIpcHandlers() {
   })
 
   // AI 轻量级：生成访谈摘要
-  ipcMain.handle('ai:generateSummary', async (_event, content) => {
+  ipcMain.handle('ai:generateSummary', async (_event, content, interviewType) => {
     try {
-      return await aiService.generateSummary(content)
+      return await aiService.generateSummary(content, interviewType)
     } catch (err) {
       return { success: false, message: err.message }
     }
   })
 
-  // AI 轻量级：提取关键发现
-  ipcMain.handle('ai:extractKeyFindings', async (_event, content, projectName) => {
+  ipcMain.handle('ai:extractKeyFindings', async (_event, content, projectName, interviewType) => {
     try {
-      return await aiService.extractKeyFindings(content, projectName)
+      return await aiService.extractKeyFindings(content, projectName, interviewType)
     } catch (err) {
       return { success: false, message: err.message }
     }
   })
 
-  // AI 轻量级：提取风险指标
-  ipcMain.handle('ai:extractRiskIndicators', async (_event, content, projectName) => {
+  ipcMain.handle('ai:extractRiskIndicators', async (_event, content, projectName, interviewType) => {
     try {
-      return await aiService.extractRiskIndicators(content, projectName)
+      return await aiService.extractRiskIndicators(content, projectName, interviewType)
     } catch (err) {
       return { success: false, message: err.message }
     }

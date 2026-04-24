@@ -103,9 +103,9 @@
             <el-table-column prop="date" label="日期" width="120" sortable />
             <el-table-column prop="title" label="访谈主题" min-width="180" show-overflow-tooltip />
             <el-table-column prop="interviewer" label="访谈人" width="120" show-overflow-tooltip />
-            <el-table-column label="被访谈人" width="120">
+            <el-table-column label="被访谈人" width="160">
               <template #default="{ row }">
-                {{ getIntervieweeName(row.interviewee_id) }}
+                {{ row.interviewee_name || '-' }}
               </template>
             </el-table-column>
             <el-table-column prop="status" label="状态" width="100">
@@ -457,8 +457,8 @@
         </el-row>
         <el-row :gutter="20">
           <el-col :span="12">
-            <el-form-item label="被访谈人" prop="interviewee_id">
-              <el-select v-model="interviewForm.interviewee_id" placeholder="请选择" filterable style="width: 100%">
+            <el-form-item label="被访谈人" prop="interviewee_ids">
+              <el-select v-model="interviewForm.interviewee_ids" placeholder="请选择（可多选）" filterable multiple collapse-tags collapse-tags-tooltip style="width: 100%">
                 <el-option
                   v-for="p in intervieweeList"
                   :key="p.id"
@@ -806,13 +806,13 @@ const interviewSaving = ref(false)
 const interviewFormRef = ref(null)
 const editingInterviewId = ref(null)
 const interviewForm = reactive({
-  date: '', title: '', interviewee_id: '', interviewer: '',
+  date: '', title: '', interviewee_ids: [], interview_type: 'individual', interviewer: '',
   time_start: '', time_end: '', location: '', remark: ''
 })
 const interviewRules = {
   date: [{ required: true, message: '请选择访谈日期', trigger: 'change' }],
   title: [{ required: true, message: '请输入访谈主题', trigger: 'blur' }],
-  interviewee_id: [{ required: true, message: '请选择被访谈人', trigger: 'change' }]
+  interviewee_ids: [{ required: true, type: 'array', min: 1, message: '请选择被访谈人', trigger: 'change' }],
 }
 
 // ==================== 访谈人员 ====================
@@ -1012,13 +1012,20 @@ function handleTabChange(tabName) {
 }
 
 // ==================== 辅助方法 ====================
-function getIntervieweeName(intervieweeId) {
-  const person = intervieweeList.value.find(p => p.id === intervieweeId)
-  return person ? person.name : '-'
+function getIntervieweeName(intervieweeIds) {
+  if (!intervieweeIds) return '-'
+  const ids = String(intervieweeIds).split(',').filter(Boolean)
+  return ids.map(id => {
+    const person = intervieweeList.value.find(p => p.id === id)
+    return person ? person.name : ''
+  }).filter(Boolean).join('、') || '-'
 }
 
 function getInterviewCountForPerson(personId) {
-  return interviewList.value.filter(i => i.interviewee_id === personId).length
+  return interviewList.value.filter(i => {
+    const ids = (i.interviewee_ids || '').split(',').filter(Boolean)
+    return ids.includes(personId)
+  }).length
 }
 
 function handleRiskSelection(selection) {
@@ -1089,14 +1096,15 @@ function openInterviewDialog(row) {
   if (row) {
     Object.assign(interviewForm, {
       date: row.date || '', title: row.title || '',
-      interviewee_id: row.interviewee_id || '', interviewer: row.interviewer || '',
+      interviewee_ids: row.interviewee_list || (row.interviewee_ids || '').split(',').filter(Boolean) || [],
+      interview_type: row.interview_type || 'individual', interviewer: row.interviewer || '',
       time_start: row.time_start || '', time_end: row.time_end || '',
       location: row.location || '', remark: row.remark || ''
     })
   } else {
     Object.assign(interviewForm, {
       date: new Date().toISOString().split('T')[0], title: '',
-      interviewee_id: '', interviewer: '', time_start: '',
+      interviewee_ids: [], interview_type: 'individual', interviewer: '', time_start: '',
       time_end: '', location: '', remark: ''
     })
   }
@@ -1107,7 +1115,11 @@ async function handleSaveInterview() {
   try { await interviewFormRef.value.validate() } catch { return }
   interviewSaving.value = true
   try {
-    const data = { ...interviewForm, project_id: props.id }
+    const data = {
+      ...interviewForm,
+      interviewee_ids: (interviewForm.interviewee_ids || []).join(','),
+      project_id: props.id
+    }
     let result
     if (interviewFormIsEdit.value) {
       result = await window.api.interviews.update(editingInterviewId.value, data)
@@ -1334,7 +1346,8 @@ async function handleGenerateAIReport() {
       key_findings: i.key_findings || '',
       risk_indicators: i.risk_indicators || '',
       date: i.date,
-      interviewee: i.interviewee_name || ''
+      interviewee: i.interviewee_name || '',
+      interview_type: i.interview_type || 'individual'
     }))
     const prompt = JSON.stringify(interviewData)
     const result = await window.api.ai.analyzeInterview(prompt, project.value?.name)

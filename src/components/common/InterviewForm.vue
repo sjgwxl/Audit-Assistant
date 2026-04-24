@@ -15,7 +15,7 @@
       label-position="top"
     >
       <el-row :gutter="20">
-        <el-col :span="12">
+        <el-col :span="8">
           <el-form-item label="访谈日期" prop="date">
             <el-date-picker
               v-model="formData.date"
@@ -26,12 +26,23 @@
             />
           </el-form-item>
         </el-col>
-        <el-col :span="12">
-          <el-form-item label="被访谈人" prop="interviewee_id">
+        <el-col :span="8">
+          <el-form-item label="访谈类型" prop="interview_type">
+            <el-select v-model="formData.interview_type" placeholder="请选择" style="width: 100%" @change="handleTypeChange">
+              <el-option label="单人访谈" value="individual" />
+              <el-option label="会议访谈" value="meeting" />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="8">
+          <el-form-item label="被访谈人" prop="interviewee_ids">
             <el-select
-              v-model="formData.interviewee_id"
-              placeholder="请选择被访谈人"
+              v-model="formData.interviewee_ids"
+              :placeholder="formData.interview_type === 'meeting' ? '请选择参会人员（可多选）' : '请选择被访谈人'"
               filterable
+              multiple
+              collapse-tags
+              collapse-tags-tooltip
               :loading="intervieweesLoading"
               style="width: 100%"
             >
@@ -194,7 +205,8 @@ const formData = reactive({
   time_end: '',
   location: '',
   interviewer: '',
-  interviewee_id: '',
+  interviewee_ids: [],
+  interview_type: 'individual',
   content: '',
   summary: '',
   key_findings: '',
@@ -226,6 +238,14 @@ async function loadInterviewees() {
   }
 }
 
+// 访谈类型切换
+function handleTypeChange(val) {
+  if (val === 'individual' && formData.interviewee_ids.length > 1) {
+    // 切换到单人访谈时，只保留第一个
+    formData.interviewee_ids = [formData.interviewee_ids[0]]
+  }
+}
+
 // 监听对话框打开，加载数据
 watch(() => props.visible, (val) => {
   if (val) {
@@ -239,7 +259,8 @@ watch(() => props.visible, (val) => {
         time_end: props.editData.time_end || '',
         location: props.editData.location || '',
         interviewer: props.editData.interviewer || '',
-        interviewee_id: props.editData.interviewee_id || '',
+        interviewee_ids: props.editData.interviewee_list || (props.editData.interviewee_ids || '').split(',').filter(Boolean) || [],
+        interview_type: props.editData.interview_type || 'individual',
         content: props.editData.content || '',
         summary: props.editData.summary || '',
         key_findings: props.editData.key_findings || '',
@@ -277,6 +298,7 @@ async function handleSubmit() {
 
     const data = {
       ...formData,
+      interviewee_ids: (formData.interviewee_ids || []).join(','),
       project_id: props.projectId,
       created_by: createdBy
     }
@@ -308,7 +330,8 @@ function resetForm() {
     time_end: '',
     location: '',
     interviewer: '',
-    interviewee_id: '',
+    interviewee_ids: [],
+    interview_type: 'individual',
     content: '',
     summary: '',
     key_findings: '',

@@ -63,7 +63,8 @@
           </div>
         </div>
         <el-divider />
-        <el-descriptions :column="3" size="small">
+        <el-descriptions :column="4" size="small">
+          <el-descriptions-item label="访谈类型">{{ interview.interview_type === 'meeting' ? '会议访谈' : '单人访谈' }}</el-descriptions-item>
           <el-descriptions-item label="访谈人">{{ interview.interviewer || '-' }}</el-descriptions-item>
           <el-descriptions-item label="被访谈人">{{ intervieweeName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ interview.created_at || '-' }}</el-descriptions-item>
@@ -378,8 +379,8 @@ async function loadInterview() {
       formData.remark = result.data.remark || ''
       isDirty.value = false
       // 加载被访谈人名称
-      if (result.data.interviewee_id) {
-        await loadIntervieweeName(result.data.interviewee_id)
+      if (result.data.interviewee_ids) {
+        await loadIntervieweeNames(result.data.interviewee_ids)
       }
     } else {
       loadError.value = result.message || '加载访谈数据失败'
@@ -392,12 +393,21 @@ async function loadInterview() {
   }
 }
 
-async function loadIntervieweeName(intervieweeId) {
+async function loadIntervieweeNames(intervieweeIds) {
   try {
-    const result = await window.api.interviewees.getById(intervieweeId)
-    if (result.success && result.data) {
-      intervieweeName.value = result.data.name || ''
+    const ids = (intervieweeIds || '').split(',').filter(Boolean)
+    if (ids.length === 0) {
+      intervieweeName.value = ''
+      return
     }
+    const names = []
+    for (const id of ids) {
+      const result = await window.api.interviewees.getById(id)
+      if (result.success && result.data) {
+        names.push(result.data.name)
+      }
+    }
+    intervieweeName.value = names.join('、')
   } catch (err) {
     console.error('加载被访谈人信息失败:', err)
     intervieweeName.value = ''
@@ -495,10 +505,14 @@ async function handleAIAnalyze() {
       interview.value?.title || ''
     )
     if (result.success) {
-      aiAnalysisResult.value = typeof result.data === 'string'
-        ? result.data
-        : JSON.stringify(result.data, null, 2)
-      ElMessage.success('AI审查完成')
+      const analysisContent = result.content || result.fullResponse?.choices?.[0]?.message?.content || ''
+      if (analysisContent) {
+        aiAnalysisResult.value = analysisContent
+        ElMessage.success('AI审查完成')
+      } else {
+        aiAnalysisResult.value = 'AI未返回有效内容，请重试'
+        ElMessage.warning('AI审查结果为空')
+      }
     } else {
       aiAnalysisResult.value = '审查失败: ' + (result.message || '未知错误')
       ElMessage.error('AI审查失败')
@@ -520,7 +534,7 @@ async function handleAIGenerateSummary() {
   }
   aiSummaryLoading.value = true
   try {
-    const result = await window.api.ai.generateSummary(formData.content)
+    const result = await window.api.ai.generateSummary(formData.content, interview.value?.interview_type || 'individual')
     if (result && result.success) {
       formData.summary = result.content || ''
       markDirty()
@@ -558,7 +572,7 @@ async function handleAIExtractFindings() {
   }
   aiFindingsLoading.value = true
   try {
-    const result = await window.api.ai.extractKeyFindings(formData.content, interview.value?.title || '')
+    const result = await window.api.ai.extractKeyFindings(formData.content, interview.value?.title || '', interview.value?.interview_type || 'individual')
     if (result && result.success) {
       formData.key_findings = result.content || ''
       markDirty()
@@ -592,7 +606,7 @@ async function handleAIExtractRisks() {
   }
   aiRiskLoading.value = true
   try {
-    const result = await window.api.ai.extractRiskIndicators(formData.content, interview.value?.title || '')
+    const result = await window.api.ai.extractRiskIndicators(formData.content, interview.value?.title || '', interview.value?.interview_type || 'individual')
     if (result && result.success) {
       formData.risk_indicators = result.content || ''
       markDirty()

@@ -1,6 +1,6 @@
 {
   "name": "audit-assistant-system",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "审计助手系统 - Electron + Vue 3 + Element Plus 桌面应用",
   "main": "electron/main.mjs",
   "scripts": {
